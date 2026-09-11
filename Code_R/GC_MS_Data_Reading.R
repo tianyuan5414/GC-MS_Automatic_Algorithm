@@ -299,6 +299,43 @@
     
     do.call(rbind, merged)
   }
+  
+  #Combine a list of matrix into one with combined columns
+  spectra_list_to_matrix <- function(spec_list, bin_size = 0.1) {
+    
+    # all mz values
+    all_mz <- unlist(lapply(spec_list, function(x) x[, "mz"]))
+    
+    min_mz <- floor(min(all_mz) / bin_size) * bin_size
+    max_mz <- ceiling(max(all_mz) / bin_size) * bin_size
+    
+    bins <- seq(min_mz, max_mz, by = bin_size)
+    
+    result_mat <- matrix(
+      0,
+      nrow = length(spec_list),
+      ncol = length(bins),
+      dimnames = list(names(spec_list), sprintf("%.4f", bins))
+    )
+    
+    for (i in seq_along(spec_list)) {
+      
+      spec <- as.data.frame(spec_list[[i]])
+      
+      # fixed-width binning
+      spec$bin_idx <- floor((spec$mz - min_mz) / bin_size) + 1
+      
+      spec_bin <- aggregate(
+        intensity ~ bin_idx,
+        data = spec,
+        FUN = sum
+      )
+      
+      result_mat[i, spec_bin$bin_idx] <- spec_bin$intensity
+    }
+    
+    result_mat
+  }
 }
 
 #Read .cdf files
@@ -329,18 +366,18 @@
 
 #Extract signals of given Mass-to-charge ratio
 {
-  #Create a matrix to store the GC spectra under given m/z
-  eicmz <- c(161, 196)
-  eicRange <- c(0.3, 0.7)
+  # #Create a matrix to store the GC spectra under given m/z
+  # eicmz <- c(161, 196)
+  # eicRange <- c(0.3, 0.7)
   timeRange <- c(4, 28) *60
   
-  #Prepare a matrix for extracting the EIC
-  eicMat <- matrix(nrow = length(eicmz), ncol = 2,
-                   dimnames = list(c(), c('mzmin', 'mzmax')))
-  
-  #Calculate the m/z range for each interested value
-  eicMat[, 1] <- eicmz - eicRange[1]
-  eicMat[, 2] <- eicmz + eicRange[2]
+  # #Prepare a matrix for extracting the EIC
+  # eicMat <- matrix(nrow = length(eicmz), ncol = 2,
+  #                  dimnames = list(c(), c('mzmin', 'mzmax')))
+  # 
+  # #Calculate the m/z range for each interested value
+  # eicMat[, 1] <- eicmz - eicRange[1]
+  # eicMat[, 2] <- eicmz + eicRange[2]
   
   #Create a list to store all eic
   gcEIC <- list()
@@ -349,7 +386,9 @@
   loopI <- 1
   while(loopI <= length(gcmsRawXcms)) {
     
-    gcEIC[[loopI]] <- getEIC(gcmsRawXcms[[loopI]], eicMat, step = 1, 
+    gcEIC[[loopI]] <- getEIC(gcmsRawXcms[[loopI]], 
+                             # eicMat, 
+                             step = 1, 
                              rtrange = timeRange)@eic[["xcmsRaw"]]
     
     loopI <- loopI + 1
@@ -434,7 +473,8 @@
                                          'rtmin', 'rtmax')))
     
     loopJ <- 1
-    while (loopJ <= nrow(eicMat)) {
+    # while (loopJ <= nrow(eicMat)) {
+    while (loopJ <= 1) {
       
       if (!invalid(gcEICRetention[[loopI]][[loopJ]])) {
         
@@ -446,7 +486,7 @@
                                               'rtmin', 'rtmax')))
           
           #Fill in the m/z and retention time ranges
-          tempMat2[1, 1:2] <- eicMat[loopJ,]
+          # tempMat2[1, 1:2] <- eicMat[loopJ,]
           tempMat2[1, 3:4] <- gcEICRetention[[loopI]][[loopJ]]
           
         }else {
@@ -456,11 +496,11 @@
                                             c('mzmin', 'mzmax',
                                               'rtmin', 'rtmax')))
           
-          tempMat2[, 1:2] <-
-            matrix(rep(eicMat[loopJ,], nrow(gcEICRetention[[loopI]][[loopJ]])),
-                   nrow = nrow(gcEICRetention[[loopI]][[loopJ]]),
-                   ncol = length(eicMat[loopJ,]),
-                   byrow = TRUE)
+          # tempMat2[, 1:2] <-
+          #   matrix(rep(eicMat[loopJ,], nrow(gcEICRetention[[loopI]][[loopJ]])),
+          #          nrow = nrow(gcEICRetention[[loopI]][[loopJ]]),
+          #          ncol = length(eicMat[loopJ,]),
+          #          byrow = TRUE)
           
           tempMat2[, 3:4] <- gcEICRetention[[loopI]][[loopJ]]
           
@@ -487,172 +527,71 @@
   #Remove the additional row of the last matrix
   gcmsPeakStatis <- gcmsPeakStatis[-1, ]
   
-  #Loop through the raw gc spectra, to extract mass spectra around the potneital
-  #retention time that have desired m/z signals
-  #a list for recording
-  gcCandi <- list()
+  if (!file.exists(file.path('Output_R', 'ase_26_GC_Peak.csv'))) {
+    
+    #Output the peak statistics table
+    write.csv(gcmsPeakStatis, file = file.path('Output_R', 'ase_26_GC_Peak.csv'))
+    
+  }
+}
+
+#Extract all mass spectra at all peaks identified
+{
+  #Create a list to store all mass spectra
+  gcmsMS <- vector(mode = 'list', length = length(gcmsRawXcms))
   
-  #First loop - go through different batches
-  for (loopI in 1:max(unique(gcmsPeakStatis[, 1]))) {
+  for (loopI in 1:length(gcmsMS)) {
     
-    gcCandi[[loopI]] <- list()
+    #Get the number of peaks identified
+    tempNumPeaks <- nrow(gcmsPeakStatis[gcmsPeakStatis[, 1] == loopI, ])
+    gcmsMS[[loopI]] <- vector(mode = 'list', length = tempNumPeaks)
     
-    #Judge whether current batch number has candidate peak
-    tempJudge1 <- gcmsPeakStatis[which(gcmsPeakStatis[, 1] == 
-                                        unique(gcmsPeakStatis[, 1])[loopI]),]
-    
-    if (length(tempJudge1) > 0) {
+    #Go through all individual peaks in each sample
+    for (loopJ in 1:tempNumPeaks) {
       
-      #Second loop - go through different desired m/z
-      for (loopJ in 1:length(eicmz)) {
-        
-        gcCandi[[loopI]][[loopJ]] <- list()
-        
-        #Judge whether current batch number has peak at given m/z
-        tempJudge2 <- tempJudge1[which(tempJudge1[, 3] == eicMat[loopJ, 1]),]
-        
-        if (is.matrix(tempJudge2)) {
-          #Third loop - go through different individual peak
-          for (loopK in 1:nrow(tempJudge2)) {
-            
-            gcCandi[[loopI]][[loopJ]][[loopK]] <-
-              getSpec(gcmsRawXcms[[loopI]], 
-                      rtrange = tempJudge2[loopK, 5])
-          }
-        } else if (length((tempJudge2) > 0)) {
-          gcCandi[[loopI]][[loopJ]] <-
-            getSpec(gcmsRawXcms[[loopI]], 
-                    rtrange = tempJudge2[5])
-        }
-      }
+      gcmsMS[[loopI]][[loopJ]] <- getSpec(gcmsRawXcms[[loopI]], 
+                                          rtrange = gcmsPeakStatis[gcmsPeakStatis[, 1] == loopI, ][loopJ, 5])
+      
     }
   }
   
-  #Calculate the similarity score between candidate spectra and reference spectra
-  #Prescribe the reference spectra
-  msReferenceSpectra <- list(as.data.frame(gcCandi[[3]][[1]][[2]]),
-                             as.data.frame(gcCandi[[3]][[2]]))
-  
-  #Loop to go through all candidate mass spectra, and store the corresponding similarity scores
-  gcSimScores <- list()
-  
-  #First loop - go through different batches
-  for (loopI in 1:length(gcCandi)) {
+  #Unlist the second structure in the last list
+  gcmsMSUnSec <- vector(mode = 'list', length = nrow(gcmsPeakStatis))
+  tempInd <- 0
+  for (loopI in 1:length(gcmsMS)) {
     
-    gcSimScores[[loopI]] <- list()
+    gcmsMSUnSec[(tempInd + 1):(tempInd + length(gcmsMS[[loopI]]))] <-
+      gcmsMS[[loopI]]
     
-      
-    #Second loop - go through different desired m/z
-    for (loopJ in 1:length(eicmz)) {
-      
-      gcSimScores[[loopI]][[loopJ]] <- list()
-      
-      #Condition for single candidate peak
-      if (is.matrix(gcCandi[[loopI]][[loopJ]])) {
-        gcSimScores[[loopI]][[loopJ]] <-
-          SpectrumSimilarity(as.data.frame(gcCandi[[loopI]][[loopJ]]), 
-                             msReferenceSpectra[[loopJ]],
-                             xlim = c(50, 210),
-                             print.graphic = FALSE)
-        
-      }else {
-        
-        #Third loop - go through different individual peak
-        for (loopK in 1:length(gcCandi[[loopI]][[loopJ]])) {
-          
-          #Condition for single candidate peak
-          gcSimScores[[loopI]][[loopJ]][[loopK]] <-
-            SpectrumSimilarity(as.data.frame(gcCandi[[loopI]][[loopJ]][[loopK]]), 
-                               msReferenceSpectra[[loopJ]],
-                               xlim = c(50, 210),
-                               print.graphic = FALSE)
-        }
-      } 
-    }
+    tempInd <- tempInd + length(gcmsMS[[loopI]])
+    
   }
   
-  #Create a matrix for recording the sum of peak area for each sample and each m/z
-  gcmsPeakStatisSum <-  matrix(nrow = 1, ncol = 5,
-                               dimnames = list(c(), 
-                                               c('No',
-                                                 'mzmin',
-                                                 'mzmax',
-                                                 'into',
-                                                 'maxo')))
+  #Combine all MS matrix together, following the same order as the GC peak matrix
+  gcmsMSMat <- spectra_list_to_matrix(gcmsMSUnSec)
   
-  #Loop to calculate the sum of peak area for each sample and each m/z
-  loopI <- 1
-  while (loopI <= max(gcmsPeakStatis[, 1])) {
+  gcmsFullInfo <- as.data.frame(cbind(gcmsPeakStatis, gcmsMSMat))
+  
+  if (!file.exists(file.path('Output_R', 'ase_26_GC_Peak_GC+MS.csv'))) {
     
-    #Extract all peak statistics in the current sample
-    tempMat <- gcmsPeakStatis[which(gcmsPeakStatis[, 1] == loopI),]
+    #Read batch information
+    gcmsBatch <- read.csv(file.path('Data_R', 'ase_26_info.csv'))
     
-    #Create a matrix for recording all summed peak infomration
-    tempMat2 <- matrix(nrow = nrow(eicMat),
-                       ncol = 5,
-                       dimnames = list(c(), 
-                                       c('No',
-                                         'mzmin',
-                                         'mzmax',
-                                         'into',
-                                         'maxo'))
-                       )
+    # Match No
+    idx <- match(gcmsFullInfo$No, gcmsBatch$No)
     
-    tempMat2[, 1] <- loopI
+    gcmsFullInfo <- cbind(No = gcmsFullInfo[, 1], 
+                          file_id = gcmsBatch$file_id[idx],
+                          batch_id = gcmsBatch$batch_id[idx],
+                          gcmsFullInfo[, -1])
     
-    #Loop to go through all interested m/z
-    loopJ <- 1
-    while (loopJ <= nrow(eicMat)) {
-      
-      tempMat2[loopJ, 2:3] <- eicMat[loopJ,]
-      
-      if (is.vector(tempMat[which(tempMat[, 3] == eicMat[loopJ, 1]), c(8,9)])) {
-        
-        tempMat2[loopJ, 4:5] <-
-          tempMat[which(tempMat[, 3] == eicMat[loopJ, 1]), c(8,9)]
-        
-      }else {
-        
-        tempMat2[loopJ, 4:5] <- 
-          apply(tempMat[which(tempMat[, 3] == eicMat[loopJ, 1]), c(8,9)], 2, sum)
-        
-      }
-      
-      loopJ <- loopJ + 1
-    }
-    
-    #Record the temporary matrix into previous one
-    gcmsPeakStatisSum <- rbind(gcmsPeakStatisSum, tempMat2)
-    
-    loopI <- loopI + 1
+    # Save result
+    write.csv(
+      gcmsFullInfo[, -3:-4],
+      "ase_26_GC_Peak_GC+MS.csv",
+      row.names = FALSE
+    )
   }
-  
-  #Delete redundant rows in the last matrix
-  gcmsPeakStatisSum <- gcmsPeakStatisSum[-1, ]
-  
-  #Calculate the peak area ratio between 161 and 196
-  #Specify the m/z to be calculated for ratio
-  eicRatio <- c(160.7, 195.7)
-  
-  #Create a matrix for storing all ratios
-  gcmsPeakRatio <- matrix(nrow = length(unique(gcmsPeakStatisSum[, 1])),
-                          ncol = 2,
-                          dimnames = list(c(),
-                                          c('No',
-                                            'Ratio')))
-  
-  gcmsPeakRatio[, 1] <- unique(gcmsPeakStatisSum[, 1])
-  gcmsPeakRatio[, 2] <- 
-    gcmsPeakStatisSum[which(gcmsPeakStatisSum[, 2] == eicRatio[1]), 4] /
-    gcmsPeakStatisSum[which(gcmsPeakStatisSum[, 2] == eicRatio[2]), 4]
-  
-  #Delete redundant objects
-  rm(tempMat,
-     tempMat2,
-     loopI,
-     loopJ,
-     loopK,
-     tempBackNoise)
 }
 
 #Data output
