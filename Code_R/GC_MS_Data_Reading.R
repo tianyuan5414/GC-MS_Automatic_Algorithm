@@ -303,17 +303,8 @@
 
 #Read .cdf files
 {
-  #Setup directories of .D files
-  #Setup parent directory for reading data
-  setwd(here())
-  setwd('..')
-  tempDir <- paste(getwd(), '/Data_R/gh_2025/AIAEXPRT.AIA', sep = '', collapse = NULL)
-  
   # Get the full path to the CDF files
-  cdfs <- dir(tempDir)
-  
-  #Read all cdf files under the given directory
-  setwd(tempDir)
+  cdfs <- dir(file.path('Data_R','ase_26'))
   
   #Crate a list to store all cdf files in xcmsraw format
   gcmsRawXcms <- list()
@@ -324,11 +315,16 @@
   
   #Loop to read all cdfs as xcmsraw format
   gcmsRawXcms <- foreach(i = 1:length(cdfs)) %dopar% {
-    xcms::xcmsRaw(cdfs[i], profstep = 0.1)
+    xcms::xcmsRaw(file.path('Data_R', 'ase_26',cdfs[i]), profstep = 0.1)
   }
   
   # For doParallel
   stopImplicitCluster() 
+  
+  if (!file.exists(file.path('Output_R', 'ase_26.RData'))) {
+    #Save the spectra data read from CDF
+    save(gcmsRawXcms, file = file.path('Output_R', 'ase_26.RData'))
+  }
 }
 
 #Extract signals of given Mass-to-charge ratio
