@@ -55,7 +55,7 @@
     }
   }
   
-  #Function to find the tipping point of a spectra, used to local the start and 
+  #Function to find the tipping point of a spectra, used to locate the start and 
     #end retention time for a derivative spectra
   tipPoint <- function(retentionTime, deriSpectrum, oriSpectrum,
                        threshould) {
@@ -151,7 +151,9 @@
                            end,
                            tolMax = 3) {
     tempLeft <- start
+    tempLeftOri <- start
     tempRight <- end
+    tempRightOri <- end
     
     tempLeftSig <- oriSpectrum[which(retentionTime == tempLeft)]
     tempRightSig <- oriSpectrum[which(retentionTime == tempRight)]
@@ -165,14 +167,15 @@
       while (loopJ <= 10*tolMax) {
         
         if ((which(as.numeric(retentionTime) == 
-                   tempLeft
+                   tempLeftOri
         ) - loopJ) < 1) {
           
           tempLeft <- retentionTime[which(as.numeric(retentionTime) == 
-                                            tempLeft
+                                            tempLeftOri
           ) - loopJ + 1]
           
           tempIndcator <- 0
+          
           
           break
           
@@ -180,15 +183,15 @@
           
           #Search for the local minimum for left section of the current peak
           if (tempLeftSig > oriSpectrum[which(as.numeric(retentionTime) == 
-                                              tempLeft
+                                              tempLeftOri
           ) - loopJ]) {
             
             tempLeftSig <- oriSpectrum[which(as.numeric(retentionTime) == 
-                                            tempLeft
+                                               tempLeftOri
             ) - loopJ]
             
             tempLeft <- retentionTime[which(as.numeric(retentionTime) == 
-                                              tempLeft
+                                              tempLeftOri
             ) - loopJ]
             
             #Reassign the terminate indicator to 1, to continue the loop
@@ -215,11 +218,11 @@
       while (loopJ <= 10*tolMax) {
         
         if ((which(as.numeric(retentionTime) == 
-                   tempRight
+                   tempRightOri
         ) + loopJ) > length(retentionTime)) {
           
           tempRight <- retentionTime[which(as.numeric(retentionTime) == 
-                                            tempRight
+                                             tempRightOri
           ) + loopJ - 1]
           
           tempIndcator <- 0
@@ -230,15 +233,15 @@
           
           #Search for the local minimum for right section of the current peak
           if (tempRightSig > oriSpectrum[which(as.numeric(retentionTime) == 
-                                              tempRight
+                                               tempRightOri
           ) + loopJ]) {
             
             tempRightSig <- oriSpectrum[which(as.numeric(retentionTime) == 
-                                               tempRight
+                                                tempRightOri
             ) + loopJ]
             
             tempRight <- retentionTime[which(as.numeric(retentionTime) == 
-                                              tempRight
+                                               tempRightOri
             ) + loopJ]
             
             #Reassign the terminate indicator to 1, to continue the loop
@@ -441,7 +444,7 @@
           tipPoint(gcEIC[[loopI]][[loopJ]][-1, 1],
                    gcEICDeri[[loopI]][[loopJ]],
                    gcEIC[[loopI]][[loopJ]][-1, 2],
-                   0.02)
+                   0.01)
         
         loopJ <- loopJ + 1
       }
